@@ -1,69 +1,201 @@
 'use strict';
 
-const objectArray = [];
+// Global Variables
+let allImagesArray = [];
+let allKeyWords = [];
+let pageTracker = 1;
+let totalPageTracker = 0;
 
+// Constructor for image objects
+// ****************************************
+const ImgObj = function (image_url, title, description, keyword, horns) {
+  this.image_url = image_url;
+  this.title = title;
+  this.description = description;
+  this.keyword = keyword;
+  this.horns = horns;
+};
 
-function HornImage(imageObject){
-  this.image_url = imageObject.image_url;
-  this.title = imageObject.title;
-  this.description = imageObject.description;
-  this.keyword = imageObject.keyword;
-  this.horn = imageObject.horn;
+// Read the JSON file from local directory
+// --------------------------------------------------
+function readJSON(filePath, fileType) {
+  let tempImgArray = [];
+  let tempKeywordArray = []
+
+  $.get(filePath, fileType).then(imgs => {
+    imgs.forEach(img => {
+      // Instantiate new object using ImgObj constructor
+      let imgObj = new ImgObj(img.image_url, img.title, img.description, img.keyword, img.horns);
+      tempImgArray.push(imgObj);
+
+      // If img.keyword does not exists in allKeyWords, push it into allKeyWords.
+      if (!tempKeywordArray.includes(img.keyword)) {
+        tempKeywordArray.push(img.keyword);
+      }
+    });
+
+    allImagesArray.push(tempImgArray);
+    allKeyWords.push(tempKeywordArray);
+
+    totalPageTracker++;
+    showInitialPage(tempImgArray, tempKeywordArray);
+  });
 }
 
-HornImage.prototype.render = function() {
-  $('main').append('<div class = "clone"></div>');
-  let $imgContainer = $('div[class="clone"]');
-  let $clonedImage = $('#photo-template').html();
+// Show image elements on initial page load
+// --------------------------------------------
+function showInitialPage(allImages, allKeyWords) {
+  // Render all of the images
+  let $divEle = $('<div></div>');
 
-  $imgContainer.html($clonedImage);
-  $imgContainer.find('h2').text(this.title);
-  $imgContainer.find('img').attr('src', this.image_url);
-  $imgContainer.find('p').text(this.description);
-  $imgContainer.attr('class', '');
-  $imgContainer.attr('class',this.keyword);
+  sortImagesByObjProp(allImages, 'title');
+
+  allImages.forEach(img => {
+    renderWithHandleBars(img, $divEle);
+  });
+
+  $('main').append($divEle);
+
+  if (totalPageTracker > 1) {
+    $divEle.hide();
+  } else {
+    // Poplulate dropdown with keywords
+    populateDropDown(allKeyWords);
+  }
+}
+
+// Render image element with Handlebar.js template
+// --------------------------------------------------------
+function renderWithHandleBars(imgObject, $parentEle) {
+  const source = document.getElementById('img-template').innerHTML;
+  const template = Handlebars.compile(source);
+
+  const context = {
+    keyword: imgObject.keyword,
+    image_url: imgObject.image_url,
+    title: imgObject.title,
+    description: imgObject.description
+  };
+
+  const html = template(context);
+  $parentEle.append(html);
 }
 
 
-let readJSON = function(){
-  $.get('./data/page-1.json',data => {
-    data.forEach(imageObject => {
-      let newHorn = new HornImage(imageObject);
-      objectArray.push(newHorn);
+// Populate the select dropdown with keywords
+// --------------------------------------------------
+function populateDropDown(allKeyWords) {
+  const $dropdown = $('#filter');
+  $dropdown.empty();
+  $dropdown.append($('<option>', { value: 'default', text: 'Filter by Keyword' }));
 
-    })
-  }).then(renderImage).then(renderSelect)
+  allKeyWords.forEach(keyword => {
+    $dropdown.append($('<option>', { value: keyword, text: keyword }));
+  });
 }
 
-function renderImage() {
-  objectArray.forEach(HornImage => {
-    HornImage.render();
-  })
+// Reset the sort by dropdown back to default selection
+function resetSortByDropdown() {
+  $('#sort').val('default');
 }
 
-function renderSelect() {
-  let duplicateArray = [];
-  objectArray.forEach(text => {
-    if( ! duplicateArray.includes(text.keyword) ) {
-      $('select').append('<option class ="clone"></option>');
-      let $optContainer = $('option[class="clone"]');
-      $optContainer.text(text.keyword);
-      duplicateArray.push(text.keyword);
-      $optContainer.attr('class', '');
+// Sort images by object property, title or horns with collaboration from our instructor Ahmed from his demo
+
+// --------------------------------------
+function sortImagesByObjProp(images, type) {
+  images.sort((a, b) => {
+    a = a[type];
+    b = b[type];
+
+    if (type === 'title') {
+      a = a.toUpperCase();
+      b = b.toUpperCase();
     }
-  })
+
+    if (a > b) {
+      return 1;
+    } else {
+      return -1;
+    }
+  });
 }
 
+// Event Listener - On change, Filter by animal dropdown
+// ================================================
+$('#filter').on('change', function() {
+  resetSortByDropdown();
 
+  // Get value from HTML dropdown
+  let $selection = $(this).val();
 
-$('select').on('change', changeView);
+  // Hide all section elements
+  $('section').hide();
 
-function changeView() {
-  let selected = $(this).val();
-  $('div').not('.' + selected).fadeOut();
-  $('.' + selected).fadeIn();
+  // Check if default has been selected from dropdown
+  if ($selection === 'default') {
+    $('section').show(); // show all
+  } else {
+    $(`section[keyword="${$selection}"]`).show(); // show filtered
+  }
+});
 
-}
+// Event Listener - On change, Sort by dropdown for titles and horns
+// ================================================
+$('#sort').on('change', function() {
+  // Get value from HTML dropdown
+  let $selection = $(this).val();
 
+  if ($selection === 'title') {
+    sortImagesByObjProp(allImagesArray[pageTracker - 1], 'title');
+    renderSortedImages();
+    populateDropDown(allKeyWords[pageTracker - 1]);
+  } else if ($selection === 'horns') {
+    sortImagesByObjProp(allImagesArray[pageTracker - 1], 'horns');
+    renderSortedImages();
+    populateDropDown(allKeyWords[pageTracker - 1]);
+  } else {
+    console.log('Default option was selected.');
+  }
+});
 
-readJSON();
+// Event Listener - On click, pagination
+// ========================================
+$('#pagination').on('click', function(event) {
+  event.preventDefault();
+
+  resetSortByDropdown();
+
+  let page = $(event.target).html();
+  $('#pagination a').removeClass('active');
+  $(event.target).addClass('active');
+
+  $('main > div').hide(); // hide all containers that hold images
+  $('section').show(); // show all images
+
+  switch (page) {
+  case '1':
+    pageTracker = 1;
+    $('main div:nth-child(1)').show();
+    populateDropDown(allKeyWords[0]);
+    break;
+
+  case '2':
+    pageTracker = 2;
+    $('main div:nth-child(2)').show();
+    populateDropDown(allKeyWords[1]);
+    break;
+
+  default:
+    pageTracker = 1;
+    $('main div:nth-child(1)').show();
+    populateDropDown(allKeyWords[0]);
+  }
+});
+
+// Run on Ready!
+// --------------------------------------------------
+$(document).ready(function() {
+  // Read JSON file from local data directory
+  readJSON('./data/page-1.json', 'json');
+  readJSON('./data/page-2.json', 'json');
+});
